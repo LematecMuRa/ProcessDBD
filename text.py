@@ -1,11 +1,17 @@
 import pandas as pd # type: ignore
 import re
 import matplotlib.pyplot as plt
+import sys
 
 
 text_file = "./DATA_BLOCK dbd_testbuffer.txt"
 data_dict = {}
-thickness = 0.76
+
+if len(sys.argv) > 1:
+    thickness = float(sys.argv[1])
+else:
+    thickness = 0.76
+
 upper_trshld = round(1.3 * thickness, 3)
 lower_trshld = round(0.7 * thickness, 3)
 
