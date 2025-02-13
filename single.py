@@ -50,10 +50,12 @@ def start_process():
 
         def main():
             data_dict = {}
-            row_indices_stac_change = []
+            row_without_dbd_mes = []
             controller1 = []
             controller2 = []
             sngle_controller = []
+            cell = 0
+            stack_change = []
 
             if controller_binary & 0b0001: 
                 controller1.append('dbdTrspMeasurement[1]')
@@ -103,17 +105,25 @@ def start_process():
                         data_dict[buffer_index][key] = value
 
             filtered_dict = {k: v for k, v in data_dict.items() if v['blankFromCell'] is None or int(v['blankFromCell']) != 0}
-
             df_new = pd.DataFrame.from_dict(filtered_dict, orient='index')
-            df_new.to_excel(output_file, index=False)
 
             for index, row in df_new.iterrows():
-                if (row['dbdTrspMeasurement[1]'] == 0 and row['dbdTrspMeasurement[2]'] == 0 and row['dbdTrspMeasurement[3]'] == 0 and row['dbdTrspMeasurement[4]'] == 0):
-                    row_indices_stac_change.append(index)
+                if (row['dbdTrspMeasurement[1]'] == 0 and row['dbdTrspMeasurement[2]'] == 0 
+                    and row['dbdTrspMeasurement[3]'] == 0 and row['dbdTrspMeasurement[4]'] == 0
+                    and row['X'] == 0 and row['Y'] == 0):
+                    row_without_dbd_mes.append(index)
 
-            df_dropped = df_new.drop(row_indices_stac_change)
-            row_indices_stac_change = keep_unique_values(row_indices_stac_change)
-            row_indices_stac_change = remove_values_above_range(row_indices_stac_change, len(df_dropped))
+            df_dropped = df_new.drop(row_without_dbd_mes)
+            df_dropped.to_excel(output_file, index=False)
+
+            for index, row in df_dropped.iterrows():
+                if (int((row['blankFromCell'])) != cell):
+                    if cell != 0:
+                        stack_change.append(index)
+                    cell = int(row['blankFromCell'])
+
+            row_without_dbd_mes = keep_unique_values(row_without_dbd_mes)
+            row_without_dbd_mes = remove_values_above_range(row_without_dbd_mes, len(df_dropped))
 
             if len(controller1) > 0 and len(controller2) > 0:
                 fig, axes = plt.subplots(2, 1, figsize=(28, 10))
@@ -128,7 +138,7 @@ def start_process():
                 axes[1].set_title("DBD controller 2 measurements tracking")
                 axes[1].legend()
                 if disp_stack_change:
-                    for idx in row_indices_stac_change:
+                    for idx in stack_change:
                         axes[0].axvline(x=df_dropped['bufferData'].iloc[idx], color='yellow', linestyle='--')
                         axes[1].axvline(x=df_dropped['bufferData'].iloc[idx], color='yellow', linestyle='--')
                 plt.tight_layout()
@@ -140,11 +150,16 @@ def start_process():
                 ax.axhline(y=upper_trshld, color='yellow', linestyle='--', label=f'Threshold ({upper_trshld})')
                 ax.axhline(y=lower_trshld, color='yellow', linestyle='--', label=f'Threshold ({lower_trshld})')
                 ax.legend()
+                if disp_stack_change:
+                   for idx in stack_change:
+                        ax.axvline(x=df_dropped['bufferData'].iloc[idx], color='yellow', linestyle='--')
                 plt.show()
             else:
                 print("No controller selected, no plot will be shown.")
                 print(len(controller1))
                 print(len(controller2))
+
+            print(stack_change)
         
         messagebox.showinfo("Processing", "Process started successfully!")
         main()
