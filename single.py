@@ -9,7 +9,7 @@ import matplotlib.pyplot as plt
 
 # GUI layout and components
 def select_file():
-    file_path = filedialog.askopenfilename()
+    file_path = filedialog.askopenfilename(filetypes=[("Text Files", "*.txt")])
     if file_path:
         file_label.config(text=f"Selected file: {file_path}")
 
@@ -22,8 +22,6 @@ def save_output_file():
 def start_process():
     try:
         # Get input values from the GUI
-        thickness = float(thickness_entry.get())
-        disp_stack_change = true_false_var.get()
         text_file = file_label.cget("text").replace("Selected file: ", "")
         output_file = output_file_label.cget("text").replace("Output File: ", "")
 
@@ -31,11 +29,6 @@ def start_process():
             raise ValueError("No input file selected.")
         if not output_file:
             raise ValueError("No output file selected.")
-
-        # Get controller checkboxes binary values
-        controller_1 = controller_1_cb1_var.get() | (controller_1_cb2_var.get() << 1)
-        controller_2 = (controller_2_cb1_var.get() << 2) | (controller_2_cb2_var.get() << 3)
-        controller_binary = controller_1 | controller_2
 
         # Process data or run the background script here
         def keep_unique_values(values, threshold=400):
@@ -49,26 +42,39 @@ def start_process():
             return [num for num in values if num < threshold]
 
         def main():
+            val_linewidth = float(thickness_fig_entry.get())
+            val_thickness = float(thickness_blank_entry.get())
+            upper_trshld = round(1.3 * val_thickness, 3)
+            lower_trshld = round(0.8 * val_thickness, 3)
+            disp_stack_change = display_cell_swap_var.get()
+            disp_dbd_single_figure = display_single_figure_var.get()
+            disp_dbd_treshold = display_threshold_var.get()
+            disp_vis_single_figure = display_single_figure_cor_var.get()
+
             data_dict = {}
             row_without_dbd_mes = []
             controller1 = []
             controller2 = []
-            sngle_controller = []
+            corrections = []
             cell = 0
             stack_change = []
-
-            if controller_binary & 0b0001: 
+            
+            if controller_1_cb1_var.get(): 
                 controller1.append('dbdTrspMeasurement[1]')
-            if controller_binary & 0b0010: 
+            if controller_1_cb2_var.get(): 
                 controller1.append('dbdTrspMeasurement[2]')
-            if controller_binary & 0b0100: 
+            if controller_2_cb1_var.get(): 
                 controller2.append('dbdTrspMeasurement[3]')
-            if controller_binary & 0b1000: 
+            if controller_2_cb2_var.get(): 
                 controller2.append('dbdTrspMeasurement[4]')
             
-            upper_trshld = round(1.3 * thickness, 3)
-            lower_trshld = round(0.8 * thickness, 3)
-
+            if correction_x_var.get():
+                corrections.append('X')
+            if correction_y_var.get():
+                corrections.append('Y')
+            if correction_rot_var.get():
+                corrections.append('Rotation')
+            
             # Regex pattern
             pattern = re.compile(
                 r'bufferData\[(\d+)\]\.(blankFromCell|'
@@ -124,43 +130,69 @@ def start_process():
 
             row_without_dbd_mes = keep_unique_values(row_without_dbd_mes)
             row_without_dbd_mes = remove_values_above_range(row_without_dbd_mes, len(df_dropped))
+            stack_change = remove_values_above_range(stack_change, len(df_dropped))
 
-            if len(controller1) > 0 and len(controller2) > 0:
-                fig, axes = plt.subplots(2, 1, figsize=(28, 10))
-                df_dropped.plot(x='bufferData', y=controller1, kind='line', ax=axes[0])
-                axes[0].axhline(y=upper_trshld, color='yellow', linestyle='--', label=f'Threshold ({upper_trshld})')
-                axes[0].axhline(y=lower_trshld, color='yellow', linestyle='--', label=f'Threshold ({lower_trshld})')
-                axes[0].set_title("DBD controller 1 measurements tracking")
-                axes[0].legend()
-                df_dropped.plot(x='bufferData', y=controller2, kind='line', ax=axes[1])
-                axes[1].axhline(y=upper_trshld, color='yellow', linestyle='--', label=f'Threshold ({upper_trshld})')
-                axes[1].axhline(y=lower_trshld, color='yellow', linestyle='--', label=f'Threshold ({lower_trshld})')
-                axes[1].set_title("DBD controller 2 measurements tracking")
-                axes[1].legend()
-                if disp_stack_change:
-                    for idx in stack_change:
-                        axes[0].axvline(x=df_dropped['bufferData'].iloc[idx], color='yellow', linestyle='--')
-                        axes[1].axvline(x=df_dropped['bufferData'].iloc[idx], color='yellow', linestyle='--')
-                plt.tight_layout()
+            dbd_single_graph = len(controller1) > 0 or len(controller2) > 0
+            dbd_dual_graph = len(controller1) > 0 and len(controller2) > 0 and not disp_dbd_single_figure
+            
+            if dbd_single_graph and not dbd_dual_graph:
+                single_figure = controller1 + controller2
+                if (len(single_figure) > 0):
+                    fig, ax = plt.subplots()
+                    df_dropped.plot(x='bufferData', y=single_figure, kind='line', ax=ax, linewidth = val_linewidth)
+                    if disp_dbd_treshold:
+                        ax.axhline(y=upper_trshld, color='yellow', linestyle='--', label=f'Threshold ({upper_trshld})')
+                        ax.axhline(y=lower_trshld, color='yellow', linestyle='--', label=f'Threshold ({lower_trshld})')
+                    ax.set_title("DBD measurements tracking")
+                    ax.legend()
+                    if disp_stack_change:
+                        for idx in stack_change:
+                                ax.axvline(x=idx, color='yellow', linestyle='--')
+                    plt.show()
+
+            if dbd_dual_graph:
+                multiple_figure = [controller1, controller2]
+                nmbr_figures = len(multiple_figure)
+                fig, axes = plt.subplots(nmbr_figures, 1)
+                for i in range (nmbr_figures):
+                    df_dropped.plot(x='bufferData', y=multiple_figure[i], kind='line', ax=axes[i])
+                    if disp_dbd_treshold:
+                        axes[i].axhline(y=upper_trshld, color='yellow', linestyle='--', label=f'Threshold ({upper_trshld})')
+                        axes[i].axhline(y=lower_trshld, color='yellow', linestyle='--', label=f'Threshold ({lower_trshld})')
+                    axes[i].set_title(f"DBD controller {i+1} measurements tracking")
+                    axes[i].legend()
+                    if disp_stack_change:
+                        for idx in stack_change:
+                            axes[i].axvline(x=idx, color='yellow', linestyle='--')
+                    plt.tight_layout()
                 plt.show()
-            elif (len(controller1) > 0) ^ (len(controller2) > 0):
-                sngle_controller = controller1 if len(controller1) > 0 else controller2
+            
+            vis_single_graph = len(corrections) > 0 
+            vis_mult_graph = len(corrections) > 1 and not disp_vis_single_figure
+
+            if vis_single_graph and not vis_mult_graph:
                 fig, ax = plt.subplots()
-                df_dropped.plot(x='bufferData', y=sngle_controller, kind='line', ax=ax)
-                ax.axhline(y=upper_trshld, color='yellow', linestyle='--', label=f'Threshold ({upper_trshld})')
-                ax.axhline(y=lower_trshld, color='yellow', linestyle='--', label=f'Threshold ({lower_trshld})')
+                df_dropped.plot(x='bufferData', y=corrections, kind='line', ax=ax)
                 ax.legend()
                 if disp_stack_change:
-                   for idx in stack_change:
-                        ax.axvline(x=df_dropped['bufferData'].iloc[idx], color='yellow', linestyle='--')
+                    for idx in stack_change:
+                            ax.axvline(x=idx, color='yellow', linestyle='--')
                 plt.show()
-            else:
-                print("No controller selected, no plot will be shown.")
-                print(len(controller1))
-                print(len(controller2))
 
-            print(stack_change)
-        
+            if vis_mult_graph:
+                nmbr_figures = len(corrections)
+                fig, axes = plt.subplots(nmbr_figures, 1)
+                for i in range (nmbr_figures):
+                    df_dropped.plot(x='bufferData', y=corrections[i], kind='line', ax=axes[i])
+                    axes[i].set_xlabel("")
+                    axes[i].set_title(corrections[i])
+                    axes[i].legend()
+                    if disp_stack_change:
+                        for idx in stack_change:
+                            axes[i].axvline(x=idx, color='yellow', linestyle='--')
+                    plt.tight_layout()
+                plt.show()
+
         messagebox.showinfo("Processing", "Process started successfully!")
         main()
 
@@ -174,52 +206,80 @@ root = tk.Tk()
 root.title("DBD data processing")
 
 # Set window size and center it on the screen
-window_width = 600
-window_height = 500
+window_width = 800
+window_height = 600
 
-# Get screen width and height
 screen_width = root.winfo_screenwidth()
 screen_height = root.winfo_screenheight()
 
-# Calculate position to center window
 position_top = (screen_height // 2) - (window_height // 2)
 position_right = (screen_width // 2) - (window_width // 2)
 
-# Set the geometry of the window
 root.geometry(f"{window_width}x{window_height}+{position_right}+{position_top}")
+
+# Configure grid layout for root window
+root.columnconfigure(0, weight=1)
+root.columnconfigure(1, weight=1)
+root.columnconfigure(2, weight=1)
 
 # File selection
 file_label = tk.Label(root, text="No file selected")
-file_label.pack(pady=10)
+file_label.grid(row=0, column=0, columnspan=3, pady=10, sticky="ew")
 
 select_button = tk.Button(root, text="Select Input File", command=select_file)
-select_button.pack(pady=5)
-
-# Numeric input for blank thickness
-thickness_label = tk.Label(root, text="Enter Blank Thickness:")
-thickness_label.pack(pady=5)
-
-thickness_entry = tk.Entry(root)
-thickness_entry.insert(0, "0.76")  # Set default value
-thickness_entry.pack(pady=5)
-
-# True/False selection
-true_false_var = tk.BooleanVar(value=True)
-true_checkbox = tk.Checkbutton(root, text="Plot cell swap", variable=true_false_var, onvalue=True, offvalue=False)
-true_checkbox.pack(pady=5)
+select_button.grid(row=1, column=0, columnspan=3, pady=5)
 
 # Output file selection
-output_file_label = tk.Label(root, text="No output file selected")
-output_file_label.pack(pady=10)
+output_file_label = tk.Label(root, text="Choose a folder to save your Excel file")
+output_file_label.grid(row=2, column=0, columnspan=3, pady=10, sticky="ew")
 
-output_button = tk.Button(root, text="Select Output File", command=save_output_file)
-output_button.pack(pady=5)
+output_button = tk.Button(root, text="Choose Save Location", command=save_output_file)
+output_button.grid(row=3, column=0, columnspan=3, pady=5)
+
+# Frame for Numeric Inputs
+input_frame = tk.Frame(root)
+input_frame.grid(row=4, column=0, columnspan=3, pady=10, padx=10, sticky="ew")
+input_frame.columnconfigure((0, 1, 2), weight=1)
+
+# Numeric input for Blank Thickness
+thickness_blank_label = tk.Label(input_frame, text="Blank Thickness:")
+thickness_blank_label.grid(row=0, column=0, pady=5, padx=5, sticky="ew")
+
+thickness_blank_entry = tk.Entry(input_frame, justify="center")
+thickness_blank_entry.insert(0, "0.76")
+thickness_blank_entry.grid(row=1, column=0, padx=5, pady=5, sticky="ew")
+
+# Numeric input for Figure Line Thickness
+thickness_fig_label = tk.Label(input_frame, text="Figure Line Thickness:")
+thickness_fig_label.grid(row=0, column=1, pady=5, padx=5, sticky="ew")
+
+thickness_fig_entry = tk.Entry(input_frame, justify="center")
+thickness_fig_entry.insert(0, "0.3")
+thickness_fig_entry.grid(row=1, column=1, padx=5, pady=5, sticky="ew")
+
+# Checkbox for Display Cell Swap
+display_cell_swap_var = tk.BooleanVar(value=True)
+display_cell_swap_cb = tk.Checkbutton(input_frame, text="Display Cell Swap", variable=display_cell_swap_var)
+display_cell_swap_cb.grid(row=1, column=2, padx=5, pady=5, sticky="ew")
+
+# Main Frame for Measurement & Correction Options
+main_frame = tk.Frame(root)
+main_frame.grid(row=5, column=0, columnspan=3, pady=10, padx=10, sticky="nsew")
+main_frame.columnconfigure((0, 1), weight=1)
+
+# DBD Measurements Frame
+dbd_frame = tk.LabelFrame(main_frame, text="DBD Measurements", padx=10, pady=10)
+dbd_frame.grid(row=0, column=0, padx=5, pady=5, sticky="nsew")
+
+# Configure dbd_frame to have two columns
+dbd_frame.columnconfigure(0, weight=1)
+dbd_frame.columnconfigure(1, weight=1)
 
 # Controller 1 group
-controller_1_frame = tk.LabelFrame(root, text="Controller 1", padx=10, pady=10)
-controller_1_frame.pack(pady=10, padx=10, fill="both")
+controller_1_frame = tk.LabelFrame(dbd_frame, text="Controller 1", padx=10, pady=10)
+controller_1_frame.grid(row=0, column=0, padx=10, pady=5, sticky="nsew")
 
-controller_1_cb1_var = tk.BooleanVar(value=True)
+controller_1_cb1_var = tk.BooleanVar()
 controller_1_cb1 = tk.Checkbutton(controller_1_frame, text="Sensor 1", variable=controller_1_cb1_var)
 controller_1_cb1.pack(side="left", padx=5)
 
@@ -228,20 +288,64 @@ controller_1_cb2 = tk.Checkbutton(controller_1_frame, text="Sensor 2", variable=
 controller_1_cb2.pack(side="left", padx=5)
 
 # Controller 2 group
-controller_2_frame = tk.LabelFrame(root, text="Controller 2", padx=10, pady=10)
-controller_2_frame.pack(pady=10, padx=10, fill="both")
+controller_2_frame = tk.LabelFrame(dbd_frame, text="Controller 2", padx=10, pady=10)
+controller_2_frame.grid(row=1, column=0, padx=10, pady=5, sticky="nsew")
 
 controller_2_cb1_var = tk.BooleanVar(value=True)
 controller_2_cb1 = tk.Checkbutton(controller_2_frame, text="Sensor 3", variable=controller_2_cb1_var)
 controller_2_cb1.pack(side="left", padx=5)
 
-controller_2_cb2_var = tk.BooleanVar(value=True)
+controller_2_cb2_var = tk.BooleanVar()
 controller_2_cb2 = tk.Checkbutton(controller_2_frame, text="Sensor 4", variable=controller_2_cb2_var)
 controller_2_cb2.pack(side="left", padx=5)
 
-# Start button
-start_button = tk.Button(root, text="Start", command=start_process)
-start_button.pack(pady=20)
+# Checkboxes aligned on the right
+checkbox_frame = tk.Frame(dbd_frame)
+checkbox_frame.grid(row=0, column=1, rowspan=2, padx=10, pady=5, sticky="nsew")
+
+# Display Threshold Checkbox
+display_threshold_var = tk.BooleanVar(value=True)
+display_threshold_cb = tk.Checkbutton(checkbox_frame, text="Display Threshold", variable=display_threshold_var)
+display_threshold_cb.pack(anchor="w", pady=5)
+
+# Display in Single Figure Checkbox
+display_single_figure_var = tk.BooleanVar(value=True)
+display_single_figure_cb = tk.Checkbutton(checkbox_frame, text="Single Figure DBD", variable=display_single_figure_var)
+display_single_figure_cb.pack(anchor="w", pady=5)
+
+# Display Corrections Frame
+correction_frame = tk.LabelFrame(main_frame, text="Vision App Corrections", padx=10, pady=10)
+correction_frame.grid(row=0, column=1, padx=5, pady=5, sticky="nsew")
+
+# X Correction
+correction_x_var = tk.BooleanVar(value=True)
+correction_x = tk.Checkbutton(correction_frame, text="X Correction", variable=correction_x_var)
+correction_x.grid(row=0, column=0, padx=5, sticky="w")
+
+# Y Correction
+correction_y_var = tk.BooleanVar(value=True)
+correction_y = tk.Checkbutton(correction_frame, text="Y Correction", variable=correction_y_var)
+correction_y.grid(row=1, column=0, padx=5, sticky="w")
+
+# Rotation Correction
+correction_rot_var = tk.BooleanVar(value=True)
+correction_rot = tk.Checkbutton(correction_frame, text="Rotation", variable=correction_rot_var)
+correction_rot.grid(row=2, column=0, padx=5, sticky="w")
+
+# Add space before the next checkbox
+correction_frame.grid_rowconfigure(3, minsize=15)
+
+display_single_figure_cor_var = tk.BooleanVar()
+display_single_figure_cor = tk.Checkbutton(correction_frame, text="Single Figure Correction", variable=display_single_figure_cor_var)
+display_single_figure_cor.grid(row=4, column=0, padx=5, sticky="w")
+
+# Start Button
+start_button = tk.Button(root, text="Start", font=("Arial", 14, "bold"), height=2, width=10, bg="#A9A9A9", command=start_process)
+start_button.grid(row=8, column=0, columnspan=3, pady=20, sticky="ew")
+
+# Adjust row/column weights to allow expansion
+root.grid_rowconfigure(5, weight=1)
+root.grid_columnconfigure((0, 1, 2), weight=1)
 
 # Start the Tkinter event loop
 root.mainloop()
