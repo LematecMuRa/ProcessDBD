@@ -32,6 +32,8 @@ def start_process():
 
         # Process data or run the background script here
         def keep_unique_values(values, threshold=400):
+            if not values:
+                return []
             result = [values[0]]
             for num in values[1:]:
                 if num - result[-1] > threshold:
