@@ -167,8 +167,8 @@ def start_process():
                                         key = f'C{controller}_{controller_type}'
                                     data_dict[buffer_index][key] = value
             
-            df_raw = pd.DataFrame.from_dict(data_dict, orient=index)
-            df_raw.to_excel(output_file, index=False)
+            #df_raw = pd.DataFrame.from_dict(data_dict, orient=index)
+            #df_raw.to_excel(output_file, index=False)
 
             filtered_dict = {k: v for k, v in data_dict.items() if v['blankFromCell'] is None or int(v['blankFromCell']) != 0}
             df_new = pd.DataFrame.from_dict(filtered_dict, orient='index')
