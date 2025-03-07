@@ -259,7 +259,7 @@ def start_process():
                 nmbr_figures = len(multiple_figure)
                 fig, axes = plt.subplots(nmbr_figures, 1)
                 for i in range (nmbr_figures):
-                    df_dropped.plot(x='bufferData', y=multiple_figure[i], kind='line', ax=axes[i])
+                    df_dropped.plot(x='bufferData', y=multiple_figure[i], kind='line', ax=axes[i], linewidth = val_linewidth)
                     if disp_dbd_treshold:
                         axes[i].axhline(y=upper_trshld, color='yellow', linestyle='--', label=f'Threshold ({upper_trshld})')
                         axes[i].axhline(y=lower_trshld, color='yellow', linestyle='--', label=f'Threshold ({lower_trshld})')
@@ -276,7 +276,7 @@ def start_process():
 
             if vis_single_graph and not vis_mult_graph:
                 fig, ax = plt.subplots()
-                df_dropped.plot(x='bufferData', y=corrections, kind='line', ax=ax)
+                df_dropped.plot(x='bufferData', y=corrections, kind='line', ax=ax, linewidth = val_linewidth)
                 ax.legend()
                 if disp_stack_change:
                     for idx in stack_change:
@@ -287,7 +287,7 @@ def start_process():
                 nmbr_figures = len(corrections)
                 fig, axes = plt.subplots(nmbr_figures, 1)
                 for i in range (nmbr_figures):
-                    df_dropped.plot(x='bufferData', y=corrections[i], kind='line', ax=axes[i])
+                    df_dropped.plot(x='bufferData', y=corrections[i], kind='line', ax=axes[i], linewidth = val_linewidth)
                     axes[i].set_xlabel("")
                     axes[i].set_title(corrections[i])
                     axes[i].legend()
