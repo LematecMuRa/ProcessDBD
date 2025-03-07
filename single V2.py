@@ -29,7 +29,7 @@ def start_process():
             raise ValueError("No input file selected.")
         if not output_file:
             raise ValueError("No output file selected.")
-
+        '''
         # Process data or run the background script here
         def keep_unique_values(values, threshold=400):
             if not values:
@@ -39,6 +39,8 @@ def start_process():
                 if num - result[-1] > threshold:
                     result.append(num)
             return result
+        '''
+
 
         def remove_values_above_range(values, threshold):
             return [num for num in values if int(num) < threshold]
@@ -80,11 +82,18 @@ def start_process():
             # Regex pattern
             pattern = re.compile(
                 r'bufferData\[(?P<buffer_index>\d+)\]\.(?:'
+                r'(?P<recipe>recipe) := (?P<recipe_value>\S+)|'  # recipe
                 r'(?P<blankFromCell>blankFromCell) := (?P<blankFromCell_value>\S+)|'  # blankFromCell
+                #r'(?P<time>time) := DT#\d{4}-\d{2}-\d{2}-(?P<time_value>\d{2}:\d{2}:\d{2})|'
+                r'(?P<time>"time") := DT#\d{4}-\d{2}-\d{2}-(?P<time_value>\d{2}:\d{2}:\d{2}\d*)|'
                 r'dbdGtyMeasurement\[(?P<dbdGty_index>[13])\] := (?P<dbdGty_value>\S+)|'  # dbdGtyMeasurement[1] and [3]
                 r'visionCorrectionData\[(?P<vision_index>1)\]\.(?P<vision_type>X|Y|Rotation|Quality) := (?P<vision_value>\S+)|'  # visionCorrectionData[1]
                 r'dbdTrspMeasurement\[(?P<trsp_index>\d+)\] := (?P<trsp_value>\S+)|'  # dbdTrspMeasurement[1-4]
-                r'dbdTrspTeachData\.dataController(?P<controller>[12])\.(?P<controller_type>charactVal1Blank|charactVal2Blank|teachOk|settlTime)\[?(?P<charact_index>\d+)?\]? := (?P<controller_value>\S+)'
+                r'dbdTrspTeachData\.(?P<controller>controller\d)_(?P<controller_type>charVal1Blank|charVal2Blank)'  # controller types
+                r'(?:\.(?P<controller_type2>charVal1Blank|charVal2Blank))?'  # optional second controller type
+                r'(?:\[(?P<charact_index>\d+)\])? := (?P<controller_value>\S+)|'  # optional charact_index
+                r'dbdTrspTeachData\.(?P<controller1_settlTime>controller1_settlTime) := (?P<controller1_settlTime_value>\S+)|'
+                r'dbdTrspTeachData\.(?P<controller2_settlTime>controller2_settlTime) := (?P<controller2_settlTime_value>\S+)'
                 r')'
             )
 
@@ -92,12 +101,14 @@ def start_process():
                 for line in file:
                     match = pattern.search(line)
                     if match:
-                        buffer_index = match.group("buffer_index")  # Always available
-
+                        # Capture the buffer_index for this line
+                        buffer_index = match.group("buffer_index")
+                        
                         # Initialize the dictionary for this buffer_index if it doesn't exist
                         if buffer_index not in data_dict:
                             data_dict[buffer_index] = {
                                 'bufferData': buffer_index,
+                                'recipe': None,
                                 'blankFromCell': None,
                                 'dbdGtyMeasurement[1]': None,
                                 'dbdGtyMeasurement[3]': None,
@@ -109,44 +120,30 @@ def start_process():
                                 'dbdTrspMeasurement[2]': None,
                                 'dbdTrspMeasurement[3]': None,
                                 'dbdTrspMeasurement[4]': None,
-                                'C1_charactVal1Blank[1]': None,
-                                'C1_charactVal1Blank[2]': None,
-                                'C1_charactVal1Blank[3]': None,
-                                'C1_charactVal1Blank[4]': None,
-                                'C1_charactVal2Blank[1]': None,
-                                'C1_charactVal2Blank[2]': None,
-                                'C1_charactVal2Blank[3]': None,
-                                'C1_charactVal2Blank[4]': None,
-                                'C1_teachOk': None,
-                                'C1_settlTime': None,
-                                'C2_charactVal1Blank[1]': None,
-                                'C2_charactVal1Blank[2]': None,
-                                'C2_charactVal1Blank[3]': None,
-                                'C2_charactVal1Blank[4]': None,
-                                'C2_charactVal2Blank[1]': None,
-                                'C2_charactVal2Blank[2]': None,
-                                'C2_charactVal2Blank[3]': None,
-                                'C2_charactVal2Blank[4]': None,
-                                'C2_teachOk': None,
-                                'C2_settlTime': None,
+                                'time': None,
+                                'controller1_settlTime': None,
+                                'controller2_settlTime': None,
                             }
 
-                        # Extract key-value pairs
+                        # Extract key-value pairs from the regex match groups
                         for group_name in match.groupdict():
                             if match.group(group_name) and group_name not in ["buffer_index", "controller"]:
                                 raw_value = match.group(group_name).rstrip(';')
 
-                                # Convert to float if it doesn't start with "16#"
-                                if not raw_value.startswith("16#"):
+                                # Check if the value starts with '16#' and store it as a string
+                                if raw_value.startswith("16#"):
+                                    value = raw_value
+                                else:
+                                    # Try converting to float if possible, else keep as string
                                     try:
                                         value = float(raw_value)
                                     except ValueError:
                                         value = raw_value  # Keep as string if conversion fails
-                                else:
-                                    value = raw_value  # Keep as string if it's in hex format
 
-                                # Update the dictionary based on the matched group
-                                if group_name == "blankFromCell_value":
+                                # Update the dictionary based on the group names
+                                if group_name == "recipe_value":
+                                    data_dict[buffer_index]['recipe'] = value
+                                elif group_name == "blankFromCell_value":
                                     data_dict[buffer_index]['blankFromCell'] = value
                                 elif group_name == "dbdGty_value":
                                     dbdGty_index = match.group("dbdGty_index")
@@ -160,18 +157,33 @@ def start_process():
                                 elif group_name == "controller_value":
                                     controller = match.group("controller")
                                     controller_type = match.group("controller_type")
+                                    controller_type2 = match.group("controller_type2")
                                     charact_index = match.group("charact_index")
-                                    if charact_index:
-                                        key = f'C{controller}_{controller_type}[{charact_index}]'
+
+                                    if controller_type2: 
+                                        if charact_index:
+                                            key = f'{controller}_{controller_type}.{controller_type2}[{charact_index}]'
+                                        else:
+                                            key = f'{controller}_{controller_type}.{controller_type2}'
                                     else:
-                                        key = f'C{controller}_{controller_type}'
+                                        if charact_index:
+                                            key = f'{controller}_{controller_type}[{charact_index}]'
+                                        else:
+                                            key = f'{controller}_{controller_type}'
+
                                     data_dict[buffer_index][key] = value
+                                elif group_name == "time_value":
+                                    data_dict[buffer_index]['time'] = value
+                                elif group_name == "controller1_settlTime_value":
+                                    data_dict[buffer_index]['controller1_settlTime'] = value
+                                elif group_name == "controller2_settlTime_value":
+                                    data_dict[buffer_index]['controller2_settlTime'] = value
             
-            #df_raw = pd.DataFrame.from_dict(data_dict, orient=index)
-            #df_raw.to_excel(output_file, index=False)
 
             filtered_dict = {k: v for k, v in data_dict.items() if v['blankFromCell'] is None or int(v['blankFromCell']) != 0}
             df_new = pd.DataFrame.from_dict(filtered_dict, orient='index')
+
+            df_new.iloc[:, 0] = df_new.iloc[:, 0].astype(int)
 
             for index, row in df_new.iterrows():
                 if (row['dbdTrspMeasurement[1]'] == 0 and row['dbdTrspMeasurement[2]'] == 0 
@@ -180,17 +192,33 @@ def start_process():
                     row_without_dbd_mes.append(index)
 
             df_dropped = df_new.drop(row_without_dbd_mes)
-            #df_dropped.to_excel(output_file, index=False)
+            df_dropped.to_excel(output_file, index=False)
 
             for index, row in df_dropped.iterrows():
                 if (int((row['blankFromCell'])) != cell):
                     if cell != 0:
-                        stack_change.append(index)
+                        stack_change.append(int(index))
                     cell = int(row['blankFromCell'])
 
-            row_without_dbd_mes = keep_unique_values(row_without_dbd_mes)
+            #print(f'stack_change {stack_change}, type: {type(stack_change[0])}')
+
+
+            #row_without_dbd_mes = keep_unique_values(row_without_dbd_mes)
             row_without_dbd_mes = remove_values_above_range(row_without_dbd_mes, len(df_dropped))
             stack_change = remove_values_above_range(stack_change, len(df_dropped))
+
+            
+            df_dropped.drop(columns=[
+                            'recipe', 'blankFromCell', 'dbdGtyMeasurement[1]', 'dbdGtyMeasurement[3]', 'Quality', 'time', 'controller1_settlTime', 'controller2_settlTime',
+                            'controller1_charVal1Blank[1]', 'controller1_charVal1Blank[2]', 'controller1_charVal1Blank[3]', 'controller1_charVal1Blank[4]',
+                            'controller1_charVal2Blank[1]', 'controller1_charVal2Blank[2]', 'controller1_charVal2Blank[3]', 'controller1_charVal2Blank[4]',
+                            'controller2_charVal1Blank[1]', 'controller2_charVal1Blank[2]', 'controller2_charVal1Blank[3]', 'controller2_charVal1Blank[4]',
+                            'controller2_charVal2Blank[1]', 'controller2_charVal2Blank[2]', 'controller2_charVal2Blank[3]', 'controller2_charVal2Blank[4]',], 
+                        inplace=True)
+            
+            df_dropped['bufferData'] = pd.to_numeric(df_dropped['bufferData'], errors='coerce')
+            #df_head = df_dropped.head()
+            #print(df_head.dtypes)
 
             dbd_single_graph = len(controller1) > 0 or len(controller2) > 0
             dbd_dual_graph = len(controller1) > 0 and len(controller2) > 0 and not disp_dbd_single_figure
@@ -205,6 +233,22 @@ def start_process():
                         ax.axhline(y=lower_trshld, color='yellow', linestyle='--', label=f'Threshold ({lower_trshld})')
                     ax.set_title("DBD measurements tracking")
                     ax.legend()
+
+                    '''
+                    ax.set_autoscale_on(True)  # Enable autoscaling
+                    ax.relim()  # Recalculate limits
+                    ax.autoscale_view()  # Apply autoscale
+                    
+
+                    ax.tick_params(axis='x', which='both', labelsize=10)
+                    '''
+                    #ax.set_xticks(df_dropped.index)
+                    #ax.set_xticklabels(df_dropped.index, rotation=45)
+                    #ax.set_xticks(range(int(ax.get_xlim()[0]), int(ax.get_xlim()[1]), 1))
+                    #print(ax.get_xlim()[0])
+
+
+
                     if disp_stack_change:
                         for idx in stack_change:
                                 ax.axvline(x=idx, color='yellow', linestyle='--')
